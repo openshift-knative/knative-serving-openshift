@@ -340,6 +340,14 @@
   version = "1.1.8"
 
 [[projects]]
+  branch = "master"
+  digest = "1:4316e4bd7afb658ddd4cf1f9fa60440538fa0b79c0a2deba96f30a38f32c5f2d"
+  name = "github.com/knative/pkg"
+  packages = ["apis"]
+  pruneopts = "NT"
+  revision = "9d8b936ca0621af5762916bc899d4973363a2dc4"
+
+[[projects]]
   digest = "1:58999a98719fddbac6303cb17e8d85b945f60b72f48e3a2df6b950b97fa926f1"
   name = "github.com/konsorten/go-windows-terminal-sequences"
   packages = ["."]
@@ -406,6 +414,14 @@
   pruneopts = "NT"
   revision = "4b7aa43c6742a2c18fdef89dd197aaae7dac7ccd"
   version = "1.0.1"
+
+[[projects]]
+  digest = "1:2fd2c30833c61ab0a121ce93e294307c42aa2cefe9dcc0bb8675c7c780971b80"
+  name = "github.com/openshift-knative/serverless-operator"
+  packages = ["serving/operator/pkg/apis/serving/v1alpha1"]
+  pruneopts = "NT"
+  revision = "48717753ebbde837ba2ca26e160edfe932134287"
+  version = "v1.3.0"
 
 [[projects]]
   branch = "release-4.2"
@@ -979,8 +995,8 @@
   version = "v1.6.0"
 
 [[projects]]
-  branch = "master"
-  digest = "1:45073f8af64177d0e1d6803c7f01928c365219077b659456a38c019073f5b62f"
+  branch = "release-0.10"
+  digest = "1:56e2d5d36e35d62ecc6662e4f5b6b3e6caf83c79fd808055e028fe72bfad016c"
   name = "knative.dev/pkg"
   packages = [
     "apis",
@@ -990,16 +1006,15 @@
     "kmp",
   ]
   pruneopts = "NT"
-  revision = "90c64dc2c9339c1945d13e0faf9c0e70a3c6a292"
+  revision = "884d50f09454909de6f343c165fdba5f59c5c19a"
 
 [[projects]]
-  branch = "deps-installed"
-  digest = "1:795d020ab120133322ee0d29d007157e276b74de0867feac23b27eba521d0f8d"
+  branch = "master"
+  digest = "1:48fbfacf754aa97c649c50f931bda267560424f936f3648e5bcdbacb159ece6e"
   name = "knative.dev/serving-operator"
   packages = ["pkg/apis/serving/v1alpha1"]
   pruneopts = "NT"
-  revision = "ab00e3dcb91d578f7e3e8ae5ba2ae7701824a0bf"
-  source = "https://github.com/jcrossley3/serving-operator"
+  revision = "7a6abca0cfe8dde6828421e1188196a2cbde9907"
 
 [[projects]]
   digest = "1:21c23272171c749230b32cf3d797db213414dc4bed6abcd457946230d002418f"
@@ -1076,6 +1091,7 @@
     "github.com/coreos/go-semver/semver",
     "github.com/jcrossley3/manifestival",
     "github.com/maistra/istio-operator/pkg/apis/maistra/v1",
+    "github.com/openshift-knative/serverless-operator/serving/operator/pkg/apis/serving/v1alpha1",
     "github.com/openshift/api/config/v1",
     "github.com/openshift/api/route/v1",
     "github.com/operator-framework/operator-sdk/pkg/k8sutil",

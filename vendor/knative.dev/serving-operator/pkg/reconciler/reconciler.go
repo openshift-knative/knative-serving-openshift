@@ -28,8 +28,6 @@ import (
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 
-	sharedclientset "knative.dev/pkg/client/clientset/versioned"
-	sharedclient "knative.dev/pkg/client/injection/client"
 	kubeclient "knative.dev/pkg/client/injection/kube/client"
 	"knative.dev/pkg/configmap"
 	"knative.dev/pkg/controller"
@@ -46,9 +44,6 @@ type Base struct {
 	// KubeClientSet allows us to talk to the k8s for core APIs
 	KubeClientSet kubernetes.Interface
 
-	// SharedClientSet allows us to configure shared objects
-	SharedClientSet sharedclientset.Interface
-
 	// ServingClientSet allows us to configure Serving objects
 	KnativeServingClientSet clientset.Interface
 
@@ -61,6 +56,9 @@ type Base struct {
 	// Recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
 	Recorder record.EventRecorder
+
+	// StatsReporter reports reconciler's metrics.
+	StatsReporter StatsReporter
 
 	// Sugared logger is easier to use but is not as performant as the
 	// raw logger. In performance critical paths, call logger.Desugar()
@@ -100,13 +98,19 @@ func NewBase(ctx context.Context, controllerAgentName string, cmw configmap.Watc
 		}()
 	}
 
+	// Create metrics reporter
+	statsReporter, err := NewStatsReporter(controllerAgentName)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	base := &Base{
 		KubeClientSet:           kubeClient,
-		SharedClientSet:         sharedclient.Get(ctx),
 		KnativeServingClientSet: servingclient.Get(ctx),
 		DynamicClientSet:        dynamicclient.Get(ctx),
 		ConfigMapWatcher:        cmw,
 		Recorder:                recorder,
+		StatsReporter:           statsReporter,
 		Logger:                  logger,
 	}
 
