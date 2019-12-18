@@ -4,7 +4,7 @@ import (
 	"context"
 
 	mf "github.com/jcrossley3/manifestival"
-	"github.com/openshift-knative/knative-serving-openshift/pkg"
+	"github.com/openshift-knative/knative-serving-openshift/pkg/common"
 	"github.com/openshift-knative/knative-serving-openshift/pkg/controller/knativeserving/servicemesh"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	corev1 "k8s.io/api/core/v1"
@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-var log = pkg.Log.WithName("controller")
+var log = common.Log.WithName("controller")
 
 // Add creates a new KnativeServing Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -86,6 +86,9 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	if instance.GetDeletionTimestamp() != nil {
 		return reconcile.Result{}, r.delete(instance)
 	}
+	if err := r.configure(instance); err != nil {
+		return reconcile.Result{}, err
+	}
 	if err := r.ensureFinalizers(instance); err != nil {
 		return reconcile.Result{}, err
 	}
@@ -148,6 +151,17 @@ func (a *ReconcileKnativeServing) installNetworkPolicies(ctx context.Context, in
 		return err
 	}
 	return nil
+}
+
+func (r *ReconcileKnativeServing) configure(instance *servingv1alpha1.KnativeServing) error {
+	if _, ok := instance.GetAnnotations()[common.MutationTimestampKey]; ok {
+		return nil
+	}
+	log.Info("Configuring KnativeServing for OpenShift")
+	if err := common.Mutate(instance, r.client); err != nil {
+		return err
+	}
+	return r.client.Update(context.TODO(), instance)
 }
 
 func (r *ReconcileKnativeServing) ensureFinalizers(instance *servingv1alpha1.KnativeServing) error {

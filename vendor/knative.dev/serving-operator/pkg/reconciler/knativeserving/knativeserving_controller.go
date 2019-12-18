@@ -18,6 +18,7 @@ package knativeserving
 
 import (
 	"context"
+	"fmt"
 
 	mf "github.com/jcrossley3/manifestival"
 	"go.uber.org/zap"
@@ -28,7 +29,7 @@ import (
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/util/sets"
+
 	"k8s.io/client-go/tools/cache"
 
 	"knative.dev/pkg/controller"
@@ -37,6 +38,13 @@ import (
 	"knative.dev/serving-operator/pkg/reconciler"
 	"knative.dev/serving-operator/pkg/reconciler/knativeserving/common"
 	"knative.dev/serving-operator/version"
+)
+
+const (
+	finalizerName  = "delete-knative-serving-manifest"
+	creationChange = "creation"
+	editChange     = "edit"
+	deletionChange = "deletion"
 )
 
 var (
@@ -50,7 +58,7 @@ type Reconciler struct {
 	// Listers index properties about resources
 	knativeServingLister listers.KnativeServingLister
 	config               mf.Manifest
-	servings             sets.String
+	servings             map[string]int64
 }
 
 // Check that our Reconciler implements controller.Reconciler
@@ -69,19 +77,34 @@ func (r *Reconciler) Reconcile(ctx context.Context, key string) error {
 	// Get the KnativeServing resource with this namespace/name.
 	original, err := r.knativeServingLister.KnativeServings(namespace).Get(name)
 	if apierrs.IsNotFound(err) {
-		// The resource was deleted
-		r.servings.Delete(key)
-		if r.servings.Len() == 0 {
-			r.config.DeleteAll(&metav1.DeleteOptions{})
-		}
 		return nil
-
 	} else if err != nil {
 		r.Logger.Error(err, "Error getting KnativeServing")
 		return err
 	}
-	// Keep track of the number of KnativeServings in the cluster
-	r.servings.Insert(key)
+	if original.GetDeletionTimestamp() != nil {
+		if _, ok := r.servings[key]; ok {
+			delete(r.servings, key)
+			r.StatsReporter.ReportKnativeservingChange(key, deletionChange)
+		}
+		return r.delete(original)
+	}
+	// Keep track of the number and generation of KnativeServings in the cluster.
+	newGen := original.Generation
+	if oldGen, ok := r.servings[key]; ok {
+		if newGen > oldGen {
+			r.StatsReporter.ReportKnativeservingChange(key, editChange)
+		} else if newGen < oldGen {
+			return fmt.Errorf("reconciling obsolete generation of KnativeServing %s: newGen = %d and oldGen = %d", key, newGen, oldGen)
+		}
+	} else {
+		// No metrics are emitted when newGen > 1: the first reconciling of
+		// a new operator on an existing KnativeServing resource.
+		if newGen == 1 {
+			r.StatsReporter.ReportKnativeservingChange(key, creationChange)
+		}
+	}
+	r.servings[key] = newGen
 
 	// Don't modify the informers copy.
 	knativeServing := original.DeepCopy()
@@ -112,6 +135,7 @@ func (r *Reconciler) reconcile(ctx context.Context, ks *servingv1alpha1.KnativeS
 	reqLogger.Infow("Reconciling KnativeServing", "status", ks.Status)
 
 	stages := []func(*mf.Manifest, *servingv1alpha1.KnativeServing) error{
+		r.ensureFinalizer,
 		r.initStatus,
 		r.install,
 		r.checkDeployments,
@@ -208,6 +232,38 @@ func (r *Reconciler) checkDeployments(manifest *mf.Manifest, instance *servingv1
 	}
 	instance.Status.MarkDeploymentsAvailable()
 	return nil
+}
+
+// ensureFinalizer attaches a "delete manifest" finalizer to the instance
+func (r *Reconciler) ensureFinalizer(manifest *mf.Manifest, instance *servingv1alpha1.KnativeServing) error {
+	for _, finalizer := range instance.GetFinalizers() {
+		if finalizer == finalizerName {
+			return nil
+		}
+	}
+	instance.SetFinalizers(append(instance.GetFinalizers(), finalizerName))
+	instance, err := r.KnativeServingClientSet.OperatorV1alpha1().KnativeServings(instance.Namespace).Update(instance)
+	return err
+}
+
+// delete all the resources in the release manifest
+func (r *Reconciler) delete(instance *servingv1alpha1.KnativeServing) error {
+	if len(instance.GetFinalizers()) == 0 || instance.GetFinalizers()[0] != finalizerName {
+		return nil
+	}
+	if len(r.servings) == 0 {
+		if err := r.config.DeleteAll(&metav1.DeleteOptions{}); err != nil {
+			return err
+		}
+	}
+	// The deletionTimestamp might've changed. Fetch the resource again.
+	refetched, err := r.knativeServingLister.KnativeServings(instance.Namespace).Get(instance.Name)
+	if err != nil {
+		return err
+	}
+	refetched.SetFinalizers(refetched.GetFinalizers()[1:])
+	_, err = r.KnativeServingClientSet.OperatorV1alpha1().KnativeServings(refetched.Namespace).Update(refetched)
+	return err
 }
 
 // Delete obsolete resources from previous versions

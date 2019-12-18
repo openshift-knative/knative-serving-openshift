@@ -22,6 +22,7 @@ import (
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes/scheme"
 	caching "knative.dev/caching/pkg/apis/caching/v1alpha1"
@@ -69,11 +70,15 @@ func updateDeployment(instance *servingv1alpha1.KnativeServing, u *unstructured.
 	log.Debugw("Updating Deployment", "name", u.GetName(), "registry", registry)
 
 	updateDeploymentImage(deployment, &registry, log)
-	updatePodImagePullSecrets(deployment, &registry, log)
+	deployment.Spec.Template.Spec.ImagePullSecrets = addImagePullSecrets(
+		deployment.Spec.Template.Spec.ImagePullSecrets, &registry, log)
 	err = scheme.Scheme.Convert(deployment, u, nil)
 	if err != nil {
 		return err
 	}
+	// The zero-value timestamp defaulted by the conversion causes
+	// superfluous updates
+	u.SetCreationTimestamp(metav1.Time{})
 
 	log.Debugw("Finished conversion", "name", u.GetName(), "unstructured", u.Object)
 	return nil
@@ -108,6 +113,10 @@ func updateCachingImage(instance *servingv1alpha1.KnativeServing, u *unstructure
 	if err != nil {
 		return err
 	}
+	// Cleanup zero-value default to prevent superfluous updates
+	u.SetCreationTimestamp(metav1.Time{})
+	delete(u.Object, "status")
+
 	log.Debugw("Finished conversion", "name", u.GetName(), "unstructured", u.Object)
 	return nil
 }
@@ -119,6 +128,7 @@ func updateImageSpec(image *caching.Image, registry *servingv1alpha1.Registry, l
 		log.Debugf("Updating image from: %v, to: %v", image.Spec.Image, newImage)
 		image.Spec.Image = newImage
 	}
+	image.Spec.ImagePullSecrets = addImagePullSecrets(image.Spec.ImagePullSecrets, registry, log)
 	log.Debugw("Finished updating image", "image", image.GetName())
 }
 
@@ -139,12 +149,10 @@ func replaceName(imageTemplate string, name string) string {
 	return strings.ReplaceAll(imageTemplate, containerNameVariable, name)
 }
 
-func updatePodImagePullSecrets(deployment *appsv1.Deployment, registry *servingv1alpha1.Registry, log *zap.SugaredLogger) {
+func addImagePullSecrets(imagePullSecrets []corev1.LocalObjectReference, registry *servingv1alpha1.Registry, log *zap.SugaredLogger) []corev1.LocalObjectReference {
 	if len(registry.ImagePullSecrets) > 0 {
 		log.Debugf("Adding ImagePullSecrets: %v", registry.ImagePullSecrets)
-		deployment.Spec.Template.Spec.ImagePullSecrets = append(
-			deployment.Spec.Template.Spec.ImagePullSecrets,
-			registry.ImagePullSecrets...,
-		)
+		imagePullSecrets = append(imagePullSecrets, registry.ImagePullSecrets...)
 	}
+	return imagePullSecrets
 }
