@@ -1,9 +1,11 @@
-package pkg
+package common
 
 import (
 	servingv1alpha1 "knative.dev/serving-operator/pkg/apis/serving/v1alpha1"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
+
+const MutationTimestampKey = "knative-serving-openshift/mutation"
 
 var Log = logf.Log.WithName("knative").WithName("openshift")
 

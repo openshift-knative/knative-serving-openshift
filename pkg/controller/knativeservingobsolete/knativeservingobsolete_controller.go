@@ -3,6 +3,7 @@ package knativeservingobsolete
 import (
 	"context"
 
+	"github.com/openshift-knative/knative-serving-openshift/pkg/common"
 	obsolete "github.com/openshift-knative/serverless-operator/serving/operator/pkg/apis/serving/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,6 +92,9 @@ func (r *ReconcileKnativeServingObsolete) Reconcile(request reconcile.Request) (
 		},
 	}
 	latest.Spec.Config = current.Spec.Config
+	if err := common.Mutate(latest, r.client); err != nil {
+		return reconcile.Result{}, err
+	}
 	if err := r.client.Delete(context.TODO(), current); err != nil {
 		return reconcile.Result{}, err
 	}

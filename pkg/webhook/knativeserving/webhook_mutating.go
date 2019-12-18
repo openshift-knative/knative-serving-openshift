@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/appscode/jsonpatch"
+	"github.com/openshift-knative/knative-serving-openshift/pkg/common"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
 
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
@@ -21,7 +22,7 @@ import (
 
 // Add creates a new KnativeServing Webhook
 func MutatingWebhook(mgr manager.Manager) (webhook.Webhook, error) {
-	log.Info("Setting up mutating webhook for KnativeServing")
+	common.Log.Info("Setting up mutating webhook for KnativeServing")
 	return builder.NewWebhookBuilder().
 		Name("mutating.knativeserving.openshift.io").
 		Mutating().
@@ -51,7 +52,7 @@ func (a *KnativeServingConfigurator) Handle(ctx context.Context, req types.Reque
 		return admission.ErrorResponse(http.StatusBadRequest, err)
 	}
 
-	err = a.mutate(ctx, ks)
+	err = common.Mutate(ks, a.client)
 	if err != nil {
 		return admission.ErrorResponse(http.StatusInternalServerError, err)
 	}
@@ -61,24 +62,6 @@ func (a *KnativeServingConfigurator) Handle(ctx context.Context, req types.Reque
 		return admission.ErrorResponse(http.StatusInternalServerError, err)
 	}
 	return PatchResponseFromRaw(req.AdmissionRequest.Object.Raw, marshaled)
-}
-
-// mutate defaults the given ks
-func (a *KnativeServingConfigurator) mutate(ctx context.Context, ks *servingv1alpha1.KnativeServing) error {
-	stages := []func(context.Context, *servingv1alpha1.KnativeServing) error{
-		a.egress,
-		a.ingress,
-		a.configureLogURLTemplate,
-		a.ensureCustomCerts,
-		a.imagesFromEnviron,
-	}
-	for _, stage := range stages {
-		if err := stage(ctx, ks); err != nil {
-			return err
-		}
-	}
-	log.Info("Webhook default stages complete")
-	return nil
 }
 
 // KnativeServingConfigurator implements inject.Client.
