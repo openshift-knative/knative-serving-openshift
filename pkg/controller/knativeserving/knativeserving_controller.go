@@ -86,32 +86,53 @@ func (r *ReconcileKnativeServing) Reconcile(request reconcile.Request) (reconcil
 	if instance.GetDeletionTimestamp() != nil {
 		return reconcile.Result{}, r.delete(instance)
 	}
-	if err := r.configure(instance); err != nil {
-		return reconcile.Result{}, err
-	}
-	if err := r.ensureFinalizers(instance); err != nil {
-		return reconcile.Result{}, err
-	}
-	if err := r.ensureCustomCertsConfigMap(context.TODO(), instance); err != nil {
-		return reconcile.Result{}, err
-	}
-	if err := r.installNetworkPolicies(context.TODO(), instance); err != nil {
-		return reconcile.Result{}, err
-	}
-	if err := servicemesh.ApplyServiceMesh(instance, r.client); err != nil {
-		return reconcile.Result{}, err
-	}
 
+	stages := []func(*servingv1alpha1.KnativeServing) error{
+		r.configure,
+		r.ensureFinalizers,
+		r.ensureCustomCertsConfigMap,
+		r.installNetworkPolicies,
+		r.installServiceMesh,
+	}
+	for _, stage := range stages {
+		if err := stage(instance); err != nil {
+			return reconcile.Result{}, err
+		}
+	}
 	return reconcile.Result{}, nil
 }
 
+// configure default settings for OpenShift
+func (r *ReconcileKnativeServing) configure(instance *servingv1alpha1.KnativeServing) error {
+	if _, ok := instance.GetAnnotations()[common.MutationTimestampKey]; ok {
+		return nil
+	}
+	log.Info("Configuring KnativeServing for OpenShift")
+	if err := common.Mutate(instance, r.client); err != nil {
+		return err
+	}
+	return r.client.Update(context.TODO(), instance)
+}
+
+// set a finalizer to clean up service mesh when instance is deleted
+func (r *ReconcileKnativeServing) ensureFinalizers(instance *servingv1alpha1.KnativeServing) error {
+	for _, finalizer := range instance.GetFinalizers() {
+		if finalizer == finalizerName() {
+			return nil
+		}
+	}
+	instance.SetFinalizers(append(instance.GetFinalizers(), finalizerName()))
+	return r.client.Update(context.TODO(), instance)
+}
+
 // create the configmap to be injected with custom certs
-func (r *ReconcileKnativeServing) ensureCustomCertsConfigMap(ctx context.Context, instance *servingv1alpha1.KnativeServing) error {
+func (r *ReconcileKnativeServing) ensureCustomCertsConfigMap(instance *servingv1alpha1.KnativeServing) error {
 	certs := instance.Spec.ControllerCustomCerts
 	if certs.Type != "ConfigMap" || certs.Name == "" {
 		return nil
 	}
 	cm := &corev1.ConfigMap{}
+	ctx := context.TODO()
 	if err := r.client.Get(ctx, client.ObjectKey{Name: certs.Name, Namespace: instance.GetNamespace()}, cm); err != nil {
 		if errors.IsNotFound(err) {
 			cm.Name = certs.Name
@@ -131,7 +152,7 @@ func (r *ReconcileKnativeServing) ensureCustomCertsConfigMap(ctx context.Context
 }
 
 // create wide-open networkpolicies for the knative components
-func (a *ReconcileKnativeServing) installNetworkPolicies(ctx context.Context, instance *servingv1alpha1.KnativeServing) error {
+func (a *ReconcileKnativeServing) installNetworkPolicies(instance *servingv1alpha1.KnativeServing) error {
 	namespace := instance.GetNamespace()
 	log.Info("Installing Network Policies")
 	const path = "deploy/resources/networkpolicies.yaml"
@@ -153,27 +174,12 @@ func (a *ReconcileKnativeServing) installNetworkPolicies(ctx context.Context, in
 	return nil
 }
 
-func (r *ReconcileKnativeServing) configure(instance *servingv1alpha1.KnativeServing) error {
-	if _, ok := instance.GetAnnotations()[common.MutationTimestampKey]; ok {
-		return nil
-	}
-	log.Info("Configuring KnativeServing for OpenShift")
-	if err := common.Mutate(instance, r.client); err != nil {
-		return err
-	}
-	return r.client.Update(context.TODO(), instance)
+// install service mesh control plane and member roll
+func (r *ReconcileKnativeServing) installServiceMesh(instance *servingv1alpha1.KnativeServing) error {
+	return servicemesh.ApplyServiceMesh(instance, r.client)
 }
 
-func (r *ReconcileKnativeServing) ensureFinalizers(instance *servingv1alpha1.KnativeServing) error {
-	for _, finalizer := range instance.GetFinalizers() {
-		if finalizer == finalizerName() {
-			return nil
-		}
-	}
-	instance.SetFinalizers(append(instance.GetFinalizers(), finalizerName()))
-	return r.client.Update(context.TODO(), instance)
-}
-
+// general clean-up, mostly service mesh resources
 func (r *ReconcileKnativeServing) delete(instance *servingv1alpha1.KnativeServing) error {
 	if len(instance.GetFinalizers()) == 0 || instance.GetFinalizers()[0] != finalizerName() {
 		return nil
