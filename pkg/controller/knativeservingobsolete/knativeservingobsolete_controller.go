@@ -42,9 +42,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Watch for changes to primary resource KnativeServing
 	err = c.Watch(&source.Kind{Type: &obsolete.KnativeServing{}}, &handler.EnqueueRequestForObject{})
 	if err != nil {
-		return err
+		log.Info("Obsolete KnativeServing CRD not found, and I'm totally cool with that")
 	}
-
 	return nil
 }
 
